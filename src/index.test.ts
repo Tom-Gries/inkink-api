@@ -51,3 +51,31 @@ describe('GET /api/test ohne Datenbank', () => {
     expect(body.error.code).toBe('SERVICE_UNAVAILABLE')
   })
 })
+
+describe('CORS im Dev-Setup (Web :3000 als Origin)', () => {
+  it('beantwortet den Preflight mit Access-Control-Allow-Origin', async () => {
+    const res = await app.request('/api/auth/sign-in/social', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'http://localhost:3000',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+    })
+
+    expect(res.status).toBe(204)
+    expect(res.headers.get('access-control-allow-origin')).toBe(
+      'http://localhost:3000',
+    )
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true')
+  })
+
+  it('vergibt fuer fremde Origins keine CORS-Header', async () => {
+    const res = await app.request('/api/auth/sign-in/social', {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://evil.example' },
+    })
+
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
+  })
+})

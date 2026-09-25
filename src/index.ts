@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { getAuth } from './auth'
 import { getDb } from './db'
 import { errorHandler } from './hooks/error-handler'
@@ -13,13 +14,34 @@ import { usersRoutes } from './services/users/users.routes'
  * Hono-App – läuft als EINE Vercel-Function unter /api (Fluid Compute,
  * inkl. Streaming) und lokal über `tsx server/dev.ts`.
  *
- * Seit dem Umbau liegen Frontend und API auf derselben Domain:
- *  - keine CORS-Middleware mehr nötig,
- *  - Better-Auth-Cookies (httpOnly, SameSite) laufen zwischen allen
- *    /api/auth/*-Endpunkten normal – der frühere state_mismatch-Fehler
- *    (getrennte Domains) ist damit gegenstandslos.
+ * In Produktion liegen Frontend und API auf derselben Domain (Vercel-Rewrite
+ * /api/*): keine CORS-Middleware nötig, und Better-Auth-Cookies (httpOnly,
+ * SameSite) laufen zwischen allen /api/auth/*-Endpunkten normal – der frühere
+ * state_mismatch-Fehler (getrennte Domains) ist damit gegenstandslos.
+ *
+ * Lokal (Dev) laufen Web (:3000) und API (:8787) als GETRENNTE Origins.
+ * Deshalb wird außerhalb von Produktion eine CORS-Middleware für die
+ * Web-Origins aktiviert – sonst blockiert der Browser den Google-Sign-in
+ * (Preflight ohne Access-Control-Allow-Origin).
  */
 const app = new Hono().basePath('/api')
+
+// Dev: Das Vite-Frontend (http://localhost:3000) ruft die API (:8787)
+// cross-origin auf – inklusive OAuth-Preflight. In Produktion sind beide
+// same-origin (Vercel-Rewrite), dort ist kein CORS nötig.
+if (process.env.NODE_ENV !== 'production') {
+  app.use(
+    '*',
+    cors({
+      origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      exposeHeaders: ['Content-Length'],
+      maxAge: 600,
+      credentials: true,
+    }),
+  )
+}
 
 app.onError(errorHandler)
 

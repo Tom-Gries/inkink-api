@@ -10,9 +10,11 @@ export interface CreateAuthOptions {
   googleClientId?: string
   googleClientSecret?: string
   /**
-   * Zusätzliche vertraute Origins. Seit dem Umbau sind Frontend und API
+   * Zusätzliche vertraute Origins. In Produktion sind Frontend und API
    * same-origin → leer lassen; Better Auth vertraut dann automatisch der
-   * eigenen baseURL.
+   * eigenen baseURL. Lokal (Dev) müssen die Web-Origins eingetragen werden
+   * (z. B. http://localhost:3000), damit die origin-/callbackURL-Prüfung des
+   * Google-Flows nicht mit INVALID_CALLBACK_URL fehlschlägt.
    */
   trustedOrigins?: string[]
   /** Log-Level für die Better-Auth-eigene Ausgabe (debug | info | warn | error). */
