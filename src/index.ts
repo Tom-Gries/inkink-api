@@ -14,34 +14,38 @@ import { usersRoutes } from './services/users/users.routes.js'
  * Hono-App – läuft als EINE Vercel-Function unter /api (Fluid Compute,
  * inkl. Streaming) und lokal über `tsx server/dev.ts`.
  *
- * In Produktion liegen Frontend und API auf derselben Domain (Vercel-Rewrite
- * /api/*): keine CORS-Middleware nötig, und Better-Auth-Cookies (httpOnly,
- * SameSite) laufen zwischen allen /api/auth/*-Endpunkten normal – der frühere
- * state_mismatch-Fehler (getrennte Domains) ist damit gegenstandslos.
+ * Production:
+ * Frontend und API liegen auf GETRENNTEN Domains:
  *
- * Lokal (Dev) laufen Web (:3000) und API (:8787) als GETRENNTE Origins.
- * Deshalb wird außerhalb von Produktion eine CORS-Middleware für die
- * Web-Origins aktiviert – sonst blockiert der Browser den Google-Sign-in
- * (Preflight ohne Access-Control-Allow-Origin).
+ *   Frontend: https://inkink-lilac.vercel.app
+ *   API:      https://inkink-api.vercel.app
+ *
+ * Deshalb muss die API auch in Production CORS aktivieren.
+ *
+ * Lokal:
+ *   Frontend: http://localhost:3000
+ *   API:      http://localhost:8787
+ *
+ * Better Auth verwendet Credentials/Cookies, daher ist
+ * `credentials: true` erforderlich.
  */
 const app = new Hono().basePath('/api')
 
-// Dev: Das Vite-Frontend (http://localhost:3000) ruft die API (:8787)
-// cross-origin auf – inklusive OAuth-Preflight. In Produktion sind beide
-// same-origin (Vercel-Rewrite), dort ist kein CORS nötig.
-if (process.env.NODE_ENV !== 'production') {
-  app.use(
-    '*',
-    cors({
-      origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization'],
-      exposeHeaders: ['Content-Length'],
-      maxAge: 600,
-      credentials: true,
-    }),
-  )
-}
+app.use(
+  '*',
+  cors({
+    origin: [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'https://inkink-lilac.vercel.app',
+    ],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    exposeHeaders: ['Content-Length'],
+    maxAge: 600,
+    credentials: true,
+  }),
+)
 
 app.onError(errorHandler)
 
@@ -58,16 +62,25 @@ const routes = app
   })
   .all('/auth/*', async (c) => {
     const url = new URL(c.req.url)
-    console.log(`[auth:server] → ${c.req.method} ${url.pathname}${url.search}`)
+
+    console.log(
+      `[auth:server] → ${c.req.method} ${url.pathname}${url.search}`,
+    )
 
     try {
       const res = await getAuth().handler(c.req.raw)
+
       console.log(
         `[auth:server] ← ${c.req.method} ${url.pathname} status=${res.status}`,
       )
+
       return res
     } catch (error) {
-      console.error(`[auth:server] ✗ ${c.req.method} ${url.pathname}:`, error)
+      console.error(
+        `[auth:server] ✗ ${c.req.method} ${url.pathname}:`,
+        error,
+      )
+
       throw error
     }
   })
