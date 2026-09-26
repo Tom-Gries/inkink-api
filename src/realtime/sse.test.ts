@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import app from '../index'
+import app from '../index.js'
 
 describe('GET /api/realtime/events', () => {
   it('öffnet einen SSE-Stream und sendet sofort ein Heartbeat-Event', async () => {

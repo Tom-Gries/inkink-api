@@ -1,4 +1,4 @@
-import app from './src/index'
+import app from './src/index.js'
 
 /**
  * Vercel-Function (Fluid Compute, Node.js-Runtime).

@@ -1,6 +1,6 @@
 import { ObjectId, type WithId } from 'mongodb'
-import { getDb } from '../../db'
-import type { UserDto } from '../../schemas/user'
+import { getDb } from '../../db.js'
+import type { UserDto } from '../../schemas/user.js'
 
 /**
  * Die „user"-Collection gehört Better Auth (Phase 3) und wird dort

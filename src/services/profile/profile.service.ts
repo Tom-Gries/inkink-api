@@ -1,5 +1,5 @@
-import { getDb } from '../../db'
-import type { ProfileDto } from '../../schemas/profile'
+import { getDb } from '../../db.js'
+import type { ProfileDto } from '../../schemas/profile.js'
 
 /**
  * App-eigene Profil-Collection (unabhängig von Better Auth).

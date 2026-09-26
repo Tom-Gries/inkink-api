@@ -1,6 +1,6 @@
 import { type ChangeStream, ObjectId, type WithId } from 'mongodb'
-import { getDb } from '../../db'
-import type { CreateTestMessage, TestMessageDto } from '../../schemas/test'
+import { getDb } from '../../db.js'
+import type { CreateTestMessage, TestMessageDto } from '../../schemas/test.js'
 
 interface TestMessageDocument {
   _id?: ObjectId

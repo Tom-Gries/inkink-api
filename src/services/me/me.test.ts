@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import app from '../../index'
+import app from '../../index.js'
 
 // Better-Auth-Instanz mocken: Ohne Cookie liefert getSession null –
 // der Test läuft dadurch ohne echte Auth-Infrastruktur und Datenbank.
-vi.mock('../../auth', () => ({
+vi.mock('../../auth.js', () => ({
   getAuth: () => ({
     api: {
       getSession: async () => null,

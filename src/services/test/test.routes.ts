@@ -1,13 +1,16 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { validationErrorHook } from '../../hooks/validation'
-import { createTestMessageSchema, testIdParamSchema } from '../../schemas/test'
+import { validationErrorHook } from '../../hooks/validation.js'
+import {
+  createTestMessageSchema,
+  testIdParamSchema,
+} from '../../schemas/test.js'
 import {
   createTestMessage,
   deleteTestMessage,
   getTestMessage,
   listTestMessages,
-} from './test.service'
+} from './test.service.js'
 
 export const testRoutes = new Hono()
   .post(

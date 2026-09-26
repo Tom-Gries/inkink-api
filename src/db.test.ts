@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
-import { getDb } from './db'
+import { getDb } from './db.js'
 
 const mongoUriBackup = process.env.MONGODB_URI
 

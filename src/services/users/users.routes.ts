@@ -1,8 +1,8 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { validationErrorHook } from '../../hooks/validation'
-import { userIdParamSchema } from '../../schemas/user'
-import { getUser, listUsers } from './users.service'
+import { validationErrorHook } from '../../hooks/validation.js'
+import { userIdParamSchema } from '../../schemas/user.js'
+import { getUser, listUsers } from './users.service.js'
 
 export const usersRoutes = new Hono()
 

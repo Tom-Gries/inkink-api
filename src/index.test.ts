@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
-import app from './index'
+import app from './index.js'
 
 const mongoUriBackup = process.env.MONGODB_URI
 

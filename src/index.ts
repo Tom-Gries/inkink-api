@@ -1,14 +1,14 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { getAuth } from './auth'
-import { getDb } from './db'
-import { errorHandler } from './hooks/error-handler'
-import { realtimeRoutes } from './realtime/sse.routes'
-import { meRoutes } from './services/me/me.routes'
-import { profileRoutes } from './services/profile/profile.routes'
-import { stacksRoutes } from './services/stacks/stacks.routes'
-import { testRoutes } from './services/test/test.routes'
-import { usersRoutes } from './services/users/users.routes'
+import { getAuth } from './auth.js'
+import { getDb } from './db.js'
+import { errorHandler } from './hooks/error-handler.js'
+import { realtimeRoutes } from './realtime/sse.routes.js'
+import { meRoutes } from './services/me/me.routes.js'
+import { profileRoutes } from './services/profile/profile.routes.js'
+import { stacksRoutes } from './services/stacks/stacks.routes.js'
+import { testRoutes } from './services/test/test.routes.js'
+import { usersRoutes } from './services/users/users.routes.js'
 
 /**
  * Hono-App – läuft als EINE Vercel-Function unter /api (Fluid Compute,

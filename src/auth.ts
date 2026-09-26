@@ -1,5 +1,5 @@
-import { type Auth, createAuth } from './better-auth'
-import { getDb, getMongoClient } from './db'
+import { type Auth, createAuth } from './better-auth.js'
+import { getDb, getMongoClient } from './db.js'
 
 let auth: Auth | undefined
 

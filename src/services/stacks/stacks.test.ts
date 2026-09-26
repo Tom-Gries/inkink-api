@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import app from '../../index'
+import app from '../../index.js'
 
 // In-Memory-Datenbank statt echter MongoDB – die Vertragstests laufen
 // dadurch ohne Server und ohne Umgebungsvariablen.
-vi.mock('../../db', async () => {
-  const { createInMemoryDb } = await import('../../testing/in-memory-db')
+vi.mock('../../db.js', async () => {
+  const { createInMemoryDb } = await import('../../testing/in-memory-db.js')
   const db = createInMemoryDb()
 
   return { getDb: () => db }

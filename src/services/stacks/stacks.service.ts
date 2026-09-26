@@ -1,11 +1,11 @@
 import { ObjectId, type WithId } from 'mongodb'
-import { getDb } from '../../db'
+import { getDb } from '../../db.js'
 import type {
   LeaderboardEntry,
   Question,
   StackDto,
   StackInput,
-} from '../../schemas/stack'
+} from '../../schemas/stack.js'
 
 interface StackDocument {
   _id?: ObjectId

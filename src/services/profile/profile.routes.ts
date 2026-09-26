@@ -1,10 +1,10 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { type AuthVariables, sessionMiddleware } from '../../hooks/auth'
-import { validationErrorHook } from '../../hooks/validation'
-import { updateUsernameSchema } from '../../schemas/profile'
-import { getProfile, setUsername } from './profile.service'
+import { type AuthVariables, sessionMiddleware } from '../../hooks/auth.js'
+import { validationErrorHook } from '../../hooks/validation.js'
+import { updateUsernameSchema } from '../../schemas/profile.js'
+import { getProfile, setUsername } from './profile.service.js'
 
 export const profileRoutes = new Hono<{ Variables: AuthVariables }>()
 

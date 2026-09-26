@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ChangeStream } from 'mongodb'
-import { watchTestMessages } from '../services/test/test.service'
+import { watchTestMessages } from '../services/test/test.service.js'
 
 const HEARTBEAT_INTERVAL_MS = 25_000
 

@@ -1,11 +1,11 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { validationErrorHook } from '../../hooks/validation'
+import { validationErrorHook } from '../../hooks/validation.js'
 import {
   leaderboardEntrySchema,
   stackIdParamSchema,
   stackInputSchema,
-} from '../../schemas/stack'
+} from '../../schemas/stack.js'
 import {
   addLeaderboardEntry,
   archiveStack,
@@ -13,7 +13,7 @@ import {
   getStack,
   listStacks,
   updateStack,
-} from './stacks.service'
+} from './stacks.service.js'
 
 export const stacksRoutes = new Hono()
   .get('/', async (c) => {

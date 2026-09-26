@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory'
-import { getAuth } from '../auth'
+import { getAuth } from '../auth.js'
 
 export type Session = Awaited<
   ReturnType<ReturnType<typeof getAuth>['api']['getSession']>
