@@ -1,15 +1,22 @@
 // @vitest-environment node
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import app from './index.js'
 
 const mongoUriBackup = process.env.MONGODB_URI
+const trustedOriginsBackup = process.env.TRUSTED_ORIGINS
 
 afterEach(() => {
   if (mongoUriBackup === undefined) {
     delete process.env.MONGODB_URI
   } else {
     process.env.MONGODB_URI = mongoUriBackup
+  }
+
+  if (trustedOriginsBackup === undefined) {
+    delete process.env.TRUSTED_ORIGINS
+  } else {
+    process.env.TRUSTED_ORIGINS = trustedOriginsBackup
   }
 })
 
@@ -53,6 +60,10 @@ describe('GET /api/test ohne Datenbank', () => {
 })
 
 describe('CORS im Dev-Setup (Web :3000 als Origin)', () => {
+  beforeEach(() => {
+    process.env.TRUSTED_ORIGINS = 'http://localhost:3000,http://127.0.0.1:3000'
+  })
+
   it('beantwortet den Preflight mit Access-Control-Allow-Origin', async () => {
     const res = await app.request('/api/auth/sign-in/social', {
       method: 'OPTIONS',

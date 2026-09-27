@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { getAuth } from './auth.js'
+import { getTrustedOrigins } from './config.js'
 import { getDb } from './db.js'
 import { errorHandler } from './hooks/error-handler.js'
 import { realtimeRoutes } from './realtime/sse.routes.js'
@@ -18,11 +19,11 @@ const api = new Hono().basePath('/api')
 api.use(
   '*',
   cors({
-    origin: [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'https://inkink-lilac.vercel.app',
-    ],
+    // Vertraute Origins aus der Env-Variable TRUSTED_ORIGINS
+    // (komma-separiert, getrimmt). Als Funktion pro Request gelöst –
+    // die Liste ist lazy lesbar (konsistent zu getDb/getAuth) und je
+    // Umgebung über die Env-Variable konfigurierbar.
+    origin: (origin) => (getTrustedOrigins().includes(origin) ? origin : null),
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     exposeHeaders: ['Content-Length'],

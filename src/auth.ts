@@ -1,4 +1,5 @@
 import { type Auth, createAuth } from './better-auth.js'
+import { getTrustedOrigins } from './config.js'
 import { getDb, getMongoClient } from './db.js'
 
 let auth: Auth | undefined
@@ -7,18 +8,12 @@ let auth: Auth | undefined
  * Lazy Singleton der Better-Auth-Instanz (eine DB-Verbindung pro warmem
  * Serverless-Storage).
  *
- * Production:
- * Frontend und API laufen auf getrennten Domains:
- *   Frontend: https://inkink-lilac.vercel.app
- *   API:      https://inkink-api.vercel.app
- *
- * Deshalb muss die Frontend-Origin als trustedOrigin bei Better Auth
- * eingetragen werden.
- *
- * Lokal:
- * Web (:3000) und API (:8787) laufen als getrennte Origins.
- * Deshalb werden auch die lokalen Web-Origins als trustedOrigins
- * angegeben.
+ * Die vertrauten Origins – die Origins, die Better Auth zusätzlich zur
+ * eigenen baseURL für Origin-/callbackURL-Prüfungen akzeptiert – kommen
+ * aus der Env-Variable `TRUSTED_ORIGINS` (komma-separiert, siehe
+ * getTrustedOrigins() in config.ts). Damit lassen sich die Origins je
+ * Umgebung (Development/Staging/Production) konfigurieren, ohne den
+ * Code zu ändern.
  */
 export function getAuth(): Auth {
   if (!auth) {
@@ -37,21 +32,10 @@ export function getAuth(): Auth {
       | 'error'
       | undefined
 
-    /**
-     * Better Auth muss sowohl die lokale Frontend-Origin als auch
-     * die Production-Frontend-Origin akzeptieren.
-     *
-     * Production:
-     *   https://inkink-lilac.vercel.app
-     *
-     * API:
-     *   https://inkink-api.vercel.app
-     */
-    const trustedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'https://inkink-lilac.vercel.app',
-    ]
+    // Vertraute Origins aus der Env-Variable TRUSTED_ORIGINS
+    // (komma-separiert) – keine hartcodierten Domains. Ohne Einträge
+    // vertraut Better Auth automatisch nur der eigenen baseURL.
+    const trustedOrigins = getTrustedOrigins()
 
     console.log(
       '[auth:server] getAuth(): Erstelle Better-Auth-Instanz (lazy Singleton)',
