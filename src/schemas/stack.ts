@@ -71,10 +71,11 @@ export const stackInputSchema = z.object({
     .trim()
     .min(1, 'Creatorname ist erforderlich.')
     .max(80),
+  // 0 = keine Zeitbegrenzung (kein Countdown in der Prüfung).
   examTime: z
     .number()
     .int()
-    .min(1)
+    .min(0)
     .max(24 * 60 * 60),
   passingScore: z.number().int().min(0).default(0),
   questions: z.array(questionSchema).default([]),
