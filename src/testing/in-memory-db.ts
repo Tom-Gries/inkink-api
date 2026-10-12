@@ -75,6 +75,12 @@ export function createInMemoryDb() {
           documents.splice(index, 1)
           return { deletedCount: 1 }
         },
+        // Index-Erstellung ist im In-Memory-Ersatz ein No-op: Sie liefert nur
+        // den Namen des (nicht real angelegten) Index zurück, damit Services
+        // mit idempotentem ensureIndexes() auch ohne echte DB testbar bleiben.
+        async createIndex(spec: Record<string, unknown>) {
+          return Object.keys(spec).join('_')
+        },
       }
     },
   }

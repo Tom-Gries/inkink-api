@@ -5,6 +5,7 @@ import { getTrustedOrigins } from './config.js'
 import { getDb } from './db.js'
 import { errorHandler } from './hooks/error-handler.js'
 import { realtimeRoutes } from './realtime/sse.routes.js'
+import { feelingsRoutes } from './services/feelings/feelings.routes.js'
 import { meRoutes } from './services/me/me.routes.js'
 import { profileRoutes } from './services/profile/profile.routes.js'
 import { stacksRoutes } from './services/stacks/stacks.routes.js'
@@ -48,9 +49,7 @@ const routes = api
   .all('/auth/*', async (c) => {
     const url = new URL(c.req.url)
 
-    console.log(
-      `[auth:server] → ${c.req.method} ${url.pathname}${url.search}`,
-    )
+    console.log(`[auth:server] → ${c.req.method} ${url.pathname}${url.search}`)
 
     try {
       const res = await getAuth().handler(c.req.raw)
@@ -61,10 +60,7 @@ const routes = api
 
       return res
     } catch (error) {
-      console.error(
-        `[auth:server] ✗ ${c.req.method} ${url.pathname}:`,
-        error,
-      )
+      console.error(`[auth:server] ✗ ${c.req.method} ${url.pathname}:`, error)
 
       throw error
     }
@@ -72,6 +68,7 @@ const routes = api
   .route('/me', meRoutes)
   .route('/profile', profileRoutes)
   .route('/stacks', stacksRoutes)
+  .route('/feelings', feelingsRoutes)
   .route('/test', testRoutes)
   .route('/users', usersRoutes)
   .route('/realtime', realtimeRoutes)
@@ -158,28 +155,30 @@ app.get('/', (c) => {
             Diese Seite dient zur Diagnose von OAuth/Auth-Problemen.
           </p>
 
-          ${error
-      ? `
+          ${
+            error
+              ? `
                 <p class="error">
                   OAuth Error: ${error}
                 </p>
               `
-      : `
+              : `
                 <p>
                   Keine OAuth-Fehlermeldung vorhanden.
                 </p>
               `
-    }
+          }
 
-          ${errorDescription
-      ? `
+          ${
+            errorDescription
+              ? `
                 <p>
                   <strong>Description:</strong>
                   ${errorDescription}
                 </p>
               `
-      : ''
-    }
+              : ''
+          }
         </div>
 
         <div class="card">
@@ -215,34 +214,22 @@ app.get('/', (c) => {
 
             <dt>BETTER_AUTH_SECRET</dt>
             <dd>
-              ${process.env.BETTER_AUTH_SECRET
-      ? '✅ gesetzt'
-      : '❌ fehlt'
-    }
+              ${process.env.BETTER_AUTH_SECRET ? '✅ gesetzt' : '❌ fehlt'}
             </dd>
 
             <dt>MONGODB_URI</dt>
             <dd>
-              ${process.env.MONGODB_URI
-      ? '✅ gesetzt'
-      : '❌ fehlt'
-    }
+              ${process.env.MONGODB_URI ? '✅ gesetzt' : '❌ fehlt'}
             </dd>
 
             <dt>GOOGLE_CLIENT_ID</dt>
             <dd>
-              ${process.env.GOOGLE_CLIENT_ID
-      ? '✅ gesetzt'
-      : '❌ fehlt'
-    }
+              ${process.env.GOOGLE_CLIENT_ID ? '✅ gesetzt' : '❌ fehlt'}
             </dd>
 
             <dt>GOOGLE_CLIENT_SECRET</dt>
             <dd>
-              ${process.env.GOOGLE_CLIENT_SECRET
-      ? '✅ gesetzt'
-      : '❌ fehlt'
-    }
+              ${process.env.GOOGLE_CLIENT_SECRET ? '✅ gesetzt' : '❌ fehlt'}
             </dd>
           </dl>
         </div>

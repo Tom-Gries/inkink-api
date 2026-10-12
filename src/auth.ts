@@ -17,8 +17,7 @@ let auth: Auth | undefined
  */
 export function getAuth(): Auth {
   if (!auth) {
-    const baseURL =
-      process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+    const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
 
     const secret = process.env.BETTER_AUTH_SECRET ?? ''
 
@@ -41,27 +40,29 @@ export function getAuth(): Auth {
       '[auth:server] getAuth(): Erstelle Better-Auth-Instanz (lazy Singleton)',
     )
 
-    console.log(
-      `[auth:server] getAuth(): BETTER_AUTH_URL=${baseURL}`,
-    )
+    console.log(`[auth:server] getAuth(): BETTER_AUTH_URL=${baseURL}`)
 
     console.log(
-      `[auth:server] getAuth(): BETTER_AUTH_SECRET=${secret ? `gesetzt (${secret.length} Zeichen)` : 'FEHLT'
+      `[auth:server] getAuth(): BETTER_AUTH_SECRET=${
+        secret ? `gesetzt (${secret.length} Zeichen)` : 'FEHLT'
       }`,
     )
 
     console.log(
-      `[auth:server] getAuth(): GOOGLE_CLIENT_ID=${googleClientId ? 'gesetzt' : 'FEHLT'
+      `[auth:server] getAuth(): GOOGLE_CLIENT_ID=${
+        googleClientId ? 'gesetzt' : 'FEHLT'
       }`,
     )
 
     console.log(
-      `[auth:server] getAuth(): GOOGLE_CLIENT_SECRET=${googleClientSecret ? 'gesetzt' : 'FEHLT'
+      `[auth:server] getAuth(): GOOGLE_CLIENT_SECRET=${
+        googleClientSecret ? 'gesetzt' : 'FEHLT'
       }`,
     )
 
     console.log(
-      `[auth:server] getAuth(): AUTH_LOG_LEVEL=${logLevel ?? '(Standard laut NODE_ENV)'
+      `[auth:server] getAuth(): AUTH_LOG_LEVEL=${
+        logLevel ?? '(Standard laut NODE_ENV)'
       }`,
     )
 
