@@ -1,5 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
+import { type AuthVariables, sessionMiddleware } from '../../hooks/auth.js'
 import { validationErrorHook } from '../../hooks/validation.js'
 import {
   leaderboardEntrySchema,
@@ -15,16 +17,35 @@ import {
   updateStack,
 } from './stacks.service.js'
 
-export const stacksRoutes = new Hono()
-  .get('/', async (c) => {
-    return c.json(await listStacks())
+/**
+ * Session-basierter Schutz: Ohne gültige Session (Cookie) → 401.
+ * Die userId stammt aus der Better-Auth-Session, nie aus dem Body.
+ */
+function requireUserId(
+  session: { user?: { id?: string } | null } | null,
+): string {
+  const userId = session?.user?.id
+  if (!userId) {
+    throw new HTTPException(401, { message: 'Nicht angemeldet.' })
+  }
+
+  return userId
+}
+
+export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
+  .get('/', sessionMiddleware, async (c) => {
+    const userId = requireUserId(c.get('session'))
+
+    return c.json(await listStacks(userId))
   })
   .get(
     '/:id',
+    sessionMiddleware,
     zValidator('param', stackIdParamSchema, validationErrorHook),
     async (c) => {
+      const userId = requireUserId(c.get('session'))
       const { id } = c.req.valid('param')
-      const stack = await getStack(id)
+      const stack = await getStack(id, userId)
 
       if (!stack) {
         return c.json(
@@ -38,20 +59,24 @@ export const stacksRoutes = new Hono()
   )
   .post(
     '/',
+    sessionMiddleware,
     zValidator('json', stackInputSchema, validationErrorHook),
     async (c) => {
+      const userId = requireUserId(c.get('session'))
       const input = c.req.valid('json')
-      return c.json(await createStack(input), 201)
+      return c.json(await createStack(userId, input), 201)
     },
   )
   .put(
     '/:id',
+    sessionMiddleware,
     zValidator('param', stackIdParamSchema, validationErrorHook),
     zValidator('json', stackInputSchema, validationErrorHook),
     async (c) => {
+      const userId = requireUserId(c.get('session'))
       const { id } = c.req.valid('param')
       const input = c.req.valid('json')
-      const stack = await updateStack(id, input)
+      const stack = await updateStack(id, userId, input)
 
       if (!stack) {
         return c.json(
@@ -65,10 +90,12 @@ export const stacksRoutes = new Hono()
   )
   .post(
     '/:id/archive',
+    sessionMiddleware,
     zValidator('param', stackIdParamSchema, validationErrorHook),
     async (c) => {
+      const userId = requireUserId(c.get('session'))
       const { id } = c.req.valid('param')
-      const archived = await archiveStack(id)
+      const archived = await archiveStack(id, userId)
 
       if (!archived) {
         return c.json(

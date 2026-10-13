@@ -1,4 +1,4 @@
-import { ObjectId, type WithId } from 'mongodb'
+import { type Filter, ObjectId, type WithId } from 'mongodb'
 import { getDb } from '../../db.js'
 import type {
   LeaderboardEntry,
@@ -9,6 +9,11 @@ import type {
 
 interface StackDocument {
   _id?: ObjectId
+  /**
+   * Better-Auth-`userId` des Erstellers. Ältere Stacks (vor dem
+   * Sichtbarkeits-Feature) haben dieses Feld noch nicht.
+   */
+  userId?: string
   name: string
   creatorName: string
   examTime: number
@@ -57,24 +62,51 @@ export function rankLeaderboard(
     .slice(0, 3)
 }
 
+/**
+ * Match-Filter für sichtbare Stacks: Öffentliche Stacks sieht jeder
+ * (inkl. älterer Stacks ohne `isPublic`-Feld), private Stacks nur der
+ * Besitzer. Die `userId` stammt aus der Session – nie aus dem Body.
+ */
+function visibleStacksFilter(userId: string): Filter<StackDocument> {
+  return {
+    $or: [{ isPublic: { $ne: false } }, { userId }],
+  }
+}
+
+/** Liefert einen Stack ungefiltert (nur der Leaderboard-Prozess nutzt das). */
 export async function getStackRaw(
   id: string,
 ): Promise<WithId<StackDocument> | null> {
   return stacks().findOne({ _id: new ObjectId(id) })
 }
 
-export async function getStack(id: string): Promise<StackDto | null> {
-  const document = await getStackRaw(id)
+/** Liefert einen Stack, sofern er für den Nutzer sichtbar ist. */
+export async function getStack(
+  id: string,
+  userId: string,
+): Promise<StackDto | null> {
+  const document = await stacks().findOne({
+    _id: new ObjectId(id),
+    ...visibleStacksFilter(userId),
+  })
   return document ? toDto(document) : null
 }
 
-export async function listStacks(): Promise<StackDto[]> {
-  const documents = await stacks().find().sort({ name: 1 }).toArray()
+/** Liefert öffentliche Stacks und die privaten des angemeldeten Nutzers. */
+export async function listStacks(userId: string): Promise<StackDto[]> {
+  const documents = await stacks()
+    .find(visibleStacksFilter(userId))
+    .sort({ name: 1 })
+    .toArray()
   return documents.map(toDto)
 }
 
-export async function createStack(input: StackInput): Promise<StackDto> {
+export async function createStack(
+  userId: string,
+  input: StackInput,
+): Promise<StackDto> {
   const { insertedId } = await stacks().insertOne({
+    userId,
     name: input.name,
     creatorName: input.creatorName,
     examTime: input.examTime,
@@ -104,10 +136,11 @@ export async function createStack(input: StackInput): Promise<StackDto> {
  */
 export async function updateStack(
   id: string,
+  userId: string,
   input: StackInput,
 ): Promise<StackDto | null> {
   const { modifiedCount } = await stacks().updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), userId },
     {
       $set: {
         name: input.name,
@@ -120,12 +153,15 @@ export async function updateStack(
     },
   )
 
-  return modifiedCount > 0 ? getStack(id) : null
+  return modifiedCount > 0 ? getStack(id, userId) : null
 }
 
-export async function archiveStack(id: string): Promise<boolean> {
+export async function archiveStack(
+  id: string,
+  userId: string,
+): Promise<boolean> {
   const { modifiedCount } = await stacks().updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), userId },
     { $set: { archived: true } },
   )
 
@@ -158,5 +194,7 @@ export async function addLeaderboardEntry(
     { $set: { leaderboard: ranked } },
   )
 
-  return modifiedCount > 0 ? getStack(id) : toDto(document)
+  if (modifiedCount === 0) return toDto(document)
+
+  return toDto((await getStackRaw(id)) ?? document)
 }

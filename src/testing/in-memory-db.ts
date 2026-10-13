@@ -2,15 +2,31 @@ import { ObjectId } from 'mongodb'
 
 type FakeDocument = { _id: ObjectId } & Record<string, unknown>
 
-/** Einfacher Gleichheits-Filter (Key -> Wert); unterstützt auch `_id`. */
+/** Filter: Gleichheit pro Key sowie `$or`/`$ne` für Sichtbarkeits-Abfragen. */
 type Filter = Record<string, unknown>
 
 function matches(document: FakeDocument, filter: Filter): boolean {
   return Object.entries(filter).every(([key, value]) => {
     const actual = document[key]
-    if (key === '_id' && value instanceof ObjectId) {
+
+    if (key === '_id') {
+      if (!(value instanceof ObjectId)) return false
       return actual instanceof ObjectId && actual.equals(value)
     }
+
+    // $or: Dokument passt, sobald mindestens eine Teil-Bedingung passt.
+    if (key === '$or' && Array.isArray(value)) {
+      return value.some((part) => matches(document, part as Filter))
+    }
+
+    // Vergleichsoperatoren wie { isPublic: { $ne: false } }.
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const operators = value as Record<string, unknown>
+      if ('$ne' in operators) {
+        return actual !== operators.$ne
+      }
+    }
+
     return actual === value
   })
 }
@@ -42,14 +58,16 @@ export function createInMemoryDb() {
 
           return { insertedId: _id }
         },
-        find() {
+        find(filter: Filter = {}) {
           // Selbst-verkettender Cursor: sort()/limit() sind optional und
           // in beliebiger Reihenfolge nutzbar (wie beim echten Treiber).
           const cursor = {
             sort: () => cursor,
             limit: () => cursor,
             async toArray() {
-              return documents.map((document) => ({ ...document }))
+              return documents
+                .filter((document) => matches(document, filter))
+                .map((document) => ({ ...document }))
             },
           }
 

@@ -11,6 +11,18 @@ vi.mock('../../db.js', async () => {
   return { getDb: () => db }
 })
 
+// Better-Auth-Instanz mocken: getSession liefert standardmäßig einen festen
+// Nutzer, damit die Session-geschützten Routen ohne echte Auth-Infrastruktur
+// laufen. Für den 401-Test wird per mockReturnValueOnce einmalig null geliefert,
+// für die Fremdzugriffs-Tests ein anderer Nutzer.
+vi.mock('../../auth.js', () => ({
+  getAuth: vi.fn(() => ({
+    api: {
+      getSession: async () => ({ user: { id: 'user-1' } }),
+    },
+  })),
+}))
+
 interface StackBody {
   id: string
   name: string
@@ -201,5 +213,92 @@ describe('Stacks (Vertragstests)', () => {
     const body = (await res.json()) as StackBody
     expect(body.leaderboard.some((e) => e.name === 'Schlecht')).toBe(false)
     expect(body.leaderboard).toHaveLength(3)
+  })
+
+  it('liefert 401 ohne gültige Session', async () => {
+    const { getAuth } = await import('../../auth.js')
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => null },
+    } as unknown as ReturnType<typeof getAuth>)
+
+    const res = await app.request('/api/stacks')
+
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
+  it('zeigt private Stacks nur dem Besitzer', async () => {
+    const res = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        name: 'Privatquiz',
+        isPublic: false,
+      }),
+    })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as StackBody
+
+    // Der Besitzer sieht den privaten Stack in der Liste und per ID.
+    const ownerList = await app.request('/api/stacks')
+    const ownerListBody = (await ownerList.json()) as StackBody[]
+    expect(ownerListBody.some((s) => s.id === body.id)).toBe(true)
+
+    const ownerGet = await app.request(`/api/stacks/${body.id}`)
+    expect(ownerGet.status).toBe(200)
+
+    // Ein fremder Nutzer sieht ihn weder in der Liste noch per ID (404).
+    const { getAuth } = await import('../../auth.js')
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+
+    const otherList = await app.request('/api/stacks')
+    const otherListBody = (await otherList.json()) as StackBody[]
+    expect(otherListBody.some((s) => s.id === body.id)).toBe(false)
+
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+
+    const otherGet = await app.request(`/api/stacks/${body.id}`)
+    expect(otherGet.status).toBe(404)
+
+    // Danach sieht der Besitzer den Stack weiterhin per ID.
+    const ownerGetAgain = await app.request(`/api/stacks/${body.id}`)
+    expect(ownerGetAgain.status).toBe(200)
+  })
+
+  it('verweigert das Bearbeiten und Archivieren fremder Stacks (404)', async () => {
+    const { getAuth } = await import('../../auth.js')
+
+    // Der Besitzer (user-1) kann den Stack weiterhin bearbeiten.
+    const ownerPut = await app.request(`/api/stacks/${createdId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Privatquiz' }),
+    })
+    expect(ownerPut.status).toBe(200)
+
+    // Ein fremder Nutzer darf weder bearbeiten noch archivieren – beides 404.
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const otherPut = await app.request(`/api/stacks/${createdId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Übernommen' }),
+    })
+    expect(otherPut.status).toBe(404)
+
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const otherArchive = await app.request(`/api/stacks/${createdId}/archive`, {
+      method: 'POST',
+    })
+    expect(otherArchive.status).toBe(404)
   })
 })
