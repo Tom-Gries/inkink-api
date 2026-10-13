@@ -78,6 +78,8 @@ export const stackInputSchema = z.object({
     .min(0)
     .max(24 * 60 * 60),
   passingScore: z.number().int().min(0).default(0),
+  // Öffentlich oder privat – neue Stacks sind standardmäßig öffentlich.
+  isPublic: z.boolean().default(true),
   questions: z.array(questionSchema).default([]),
 })
 
@@ -107,6 +109,8 @@ export interface StackDto {
   examTime: number
   /** Ab dieser Punktzahl gilt die Prüfung als bestanden (0 = keine Schwelle). */
   passingScore: number
+  /** Öffentlich (true) oder privat (false). */
+  isPublic: boolean
   archived: boolean
   questions: Question[]
   leaderboard: LeaderboardEntry[]

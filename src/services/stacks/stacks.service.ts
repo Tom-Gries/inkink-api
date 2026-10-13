@@ -13,6 +13,7 @@ interface StackDocument {
   creatorName: string
   examTime: number
   passingScore?: number
+  isPublic: boolean
   archived: boolean
   questions: Question[]
   leaderboard: LeaderboardEntry[]
@@ -27,6 +28,8 @@ function toDto(document: WithId<StackDocument>): StackDto {
     creatorName: document.creatorName,
     examTime: document.examTime,
     passingScore: document.passingScore ?? 0,
+    // Ältere Stacks kennen noch kein "isPublic" -> bleiben öffentlich.
+    isPublic: document.isPublic ?? true,
     archived: document.archived,
     // Ältere Stacks kennen noch kein "scoring" -> Default "all".
     questions: document.questions.map((question) => ({
@@ -76,6 +79,7 @@ export async function createStack(input: StackInput): Promise<StackDto> {
     creatorName: input.creatorName,
     examTime: input.examTime,
     passingScore: input.passingScore,
+    isPublic: input.isPublic,
     archived: false,
     questions: input.questions,
     leaderboard: [],
@@ -87,6 +91,7 @@ export async function createStack(input: StackInput): Promise<StackDto> {
     creatorName: input.creatorName,
     examTime: input.examTime,
     passingScore: input.passingScore,
+    isPublic: input.isPublic,
     archived: false,
     questions: input.questions,
     leaderboard: [],
@@ -109,6 +114,7 @@ export async function updateStack(
         creatorName: input.creatorName,
         examTime: input.examTime,
         passingScore: input.passingScore,
+        isPublic: input.isPublic,
         questions: input.questions,
       },
     },

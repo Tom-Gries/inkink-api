@@ -16,6 +16,7 @@ interface StackBody {
   name: string
   creatorName: string
   examTime: number
+  isPublic: boolean
   archived: boolean
   questions: unknown[]
   leaderboard: Array<{ name: string; score: number; time: number }>
@@ -64,6 +65,8 @@ describe('Stacks (Vertragstests)', () => {
     const body = (await res.json()) as StackBody
     expect(body.name).toBe('Kunstquiz')
     expect(body.archived).toBe(false)
+    // Ohne Angabe ist ein Stack standardmäßig öffentlich (Default public).
+    expect(body.isPublic).toBe(true)
     expect(body.leaderboard).toEqual([])
     expect(body.id).toMatch(/^[0-9a-fA-F]{24}$/)
 
@@ -134,6 +137,7 @@ describe('Stacks (Vertragstests)', () => {
     const updated = {
       ...baseStack,
       name: 'Kunstquiz II',
+      isPublic: false,
       questions: [baseStack.questions[0]],
     }
     const res = await app.request(`/api/stacks/${createdId}`, {
@@ -146,6 +150,7 @@ describe('Stacks (Vertragstests)', () => {
     const body = (await res.json()) as StackBody
     expect(body.name).toBe('Kunstquiz II')
     expect(body.questions).toHaveLength(1)
+    expect(body.isPublic).toBe(false)
   })
 
   it('archiviert einen Stack (200)', async () => {
