@@ -13,7 +13,7 @@ import type {
 interface FeelingDocument {
   _id?: ObjectId
   userId: string
-  mood: FeelingMood
+  moods: FeelingMood[]
   note: string
   createdAt: Date
 }
@@ -23,7 +23,7 @@ const feelings = () => getDb().collection<FeelingDocument>('feelings')
 function toDto(document: WithId<FeelingDocument>): FeelingDto {
   return {
     id: document._id.toHexString(),
-    mood: document.mood,
+    moods: document.moods,
     note: document.note,
     createdAt: document.createdAt.toISOString(),
   }
@@ -46,14 +46,14 @@ export async function createFeeling(
   const createdAt = new Date()
   const { insertedId } = await feelings().insertOne({
     userId,
-    mood: input.mood,
+    moods: input.moods,
     note: input.note,
     createdAt,
   })
 
   return {
     id: insertedId.toHexString(),
-    mood: input.mood,
+    moods: input.moods,
     note: input.note,
     createdAt: createdAt.toISOString(),
   }

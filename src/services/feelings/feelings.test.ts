@@ -24,13 +24,13 @@ vi.mock('../../auth.js', () => ({
 
 interface FeelingBody {
   id: string
-  mood: string
+  moods: string[]
   note: string
   createdAt: string
 }
 
 const baseFeeling = {
-  mood: 'happy',
+  moods: ['happy'],
   note: 'Heute war ein guter Tag.',
 }
 
@@ -46,7 +46,7 @@ describe('Feelings (Vertragstests)', () => {
 
     expect(res.status).toBe(201)
     const body = (await res.json()) as FeelingBody
-    expect(body.mood).toBe('happy')
+    expect(body.moods).toEqual(['happy'])
     expect(body.note).toBe('Heute war ein guter Tag.')
     expect(body.id).toMatch(/^[0-9a-fA-F]{24}$/)
 
@@ -57,20 +57,44 @@ describe('Feelings (Vertragstests)', () => {
     const res = await app.request('/api/feelings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mood: 'calm' }),
+      body: JSON.stringify({ moods: ['calm'] }),
     })
 
     expect(res.status).toBe(201)
     const body = (await res.json()) as FeelingBody
-    expect(body.mood).toBe('calm')
+    expect(body.moods).toEqual(['calm'])
     expect(body.note).toBe('')
+  })
+
+  it('erlaubt mehrere Gefühle pro Eintrag (201)', async () => {
+    const res = await app.request('/api/feelings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moods: ['happy', 'calm', 'tired'], note: '' }),
+    })
+
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as FeelingBody
+    expect(body.moods).toEqual(['happy', 'calm', 'tired'])
+  })
+
+  it('liefert 400 bei leerem moods-Array', async () => {
+    const res = await app.request('/api/feelings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moods: [], note: '' }),
+    })
+
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('VALIDATION_ERROR')
   })
 
   it('liefert 400 bei unbekanntem mood', async () => {
     const res = await app.request('/api/feelings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mood: 'unbekannt', note: '' }),
+      body: JSON.stringify({ moods: ['unbekannt'], note: '' }),
     })
 
     expect(res.status).toBe(400)

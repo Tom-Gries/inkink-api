@@ -15,8 +15,19 @@ export const feelingMoodSchema = z.enum([
   'grateful',
 ])
 
+/**
+ * Mehrere Gefühle pro Eintrag sind erlaubt – mindestens eines, ohne Obergrenze.
+ * Duplikate werden über ein Refinement ausgeschlossen.
+ */
+export const feelingMoodsSchema = z
+  .array(feelingMoodSchema)
+  .min(1, 'Mindestens ein Gefühl ist erforderlich.')
+  .refine((moods) => new Set(moods).size === moods.length, {
+    message: 'Gefühle dürfen nicht doppelt gewählt werden.',
+  })
+
 export const feelingInputSchema = z.object({
-  mood: feelingMoodSchema,
+  moods: feelingMoodsSchema,
   // Notiz ist optional – fehlend/leer ist erlaubt, wird auf '' normalisiert.
   note: z
     .string()
@@ -30,12 +41,13 @@ export const feelingIdParamSchema = z.object({
 })
 
 export type FeelingMood = z.infer<typeof feelingMoodSchema>
+export type FeelingMoods = z.infer<typeof feelingMoodsSchema>
 export type FeelingInput = z.infer<typeof feelingInputSchema>
 
 /** Gefühls-Eintrag-DTO, wie die API ihn ausliefert. */
 export interface FeelingDto {
   id: string
-  mood: FeelingMood
+  moods: FeelingMood[]
   note: string
   createdAt: string
 }
