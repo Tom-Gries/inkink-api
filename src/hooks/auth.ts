@@ -26,7 +26,9 @@ export const sessionMiddleware = createMiddleware<{ Variables: AuthVariables }>(
           `[auth:server] sessionMiddleware: Session gültig (user=${session.user.id})`,
         )
       } else {
-        console.log(
+        // Anonyme Zugriffe sind beabsichtigt (öffentliche Stacks lesen /
+        // anlegen können auch ohne Login) – kein Info-Log für jeden Besuch.
+        console.debug(
           '[auth:server] sessionMiddleware: Keine gültige Session → session=null',
         )
       }

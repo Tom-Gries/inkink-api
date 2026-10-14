@@ -10,8 +10,9 @@ import type {
 interface StackDocument {
   _id?: ObjectId
   /**
-   * Better-Auth-`userId` des Erstellers. Ältere Stacks (vor dem
-   * Sichtbarkeits-Feature) haben dieses Feld noch nicht.
+   * Better-Auth-`userId` des Erstellers – nur bei angemeldetem Anlegen.
+   * Anonyme und ältere Stacks (vor dem Sichtbarkeits-Feature) haben
+   * dieses Feld nicht.
    */
   userId?: string
   name: string
@@ -66,8 +67,17 @@ export function rankLeaderboard(
  * Match-Filter für sichtbare Stacks: Öffentliche Stacks sieht jeder
  * (inkl. älterer Stacks ohne `isPublic`-Feld), private Stacks nur der
  * Besitzer. Die `userId` stammt aus der Session – nie aus dem Body.
+ *
+ * Ohne gültige Session (`userId` fehlt) sind ausschließlich öffentliche
+ * Stacks sichtbar. Ein `$or`-Zweig mit leerer `userId` würde fehlende
+ * `userId`-Felder (anonym/legacy) fälschlich als eigenen Besitz matchen
+ * und private Stacks leaken – deshalb wird er dann weggelassen.
  */
-function visibleStacksFilter(userId: string): Filter<StackDocument> {
+function visibleStacksFilter(userId?: string): Filter<StackDocument> {
+  if (!userId) {
+    return { isPublic: { $ne: false } }
+  }
+
   return {
     $or: [{ isPublic: { $ne: false } }, { userId }],
   }
@@ -83,7 +93,7 @@ export async function getStackRaw(
 /** Liefert einen Stack, sofern er für den Nutzer sichtbar ist. */
 export async function getStack(
   id: string,
-  userId: string,
+  userId?: string,
 ): Promise<StackDto | null> {
   const document = await stacks().findOne({
     _id: new ObjectId(id),
@@ -92,8 +102,8 @@ export async function getStack(
   return document ? toDto(document) : null
 }
 
-/** Liefert öffentliche Stacks und die privaten des angemeldeten Nutzers. */
-export async function listStacks(userId: string): Promise<StackDto[]> {
+/** Liefert öffentliche Stacks und (bei Session) die privaten des Nutzers. */
+export async function listStacks(userId?: string): Promise<StackDto[]> {
   const documents = await stacks()
     .find(visibleStacksFilter(userId))
     .sort({ name: 1 })
@@ -101,17 +111,24 @@ export async function listStacks(userId: string): Promise<StackDto[]> {
   return documents.map(toDto)
 }
 
+/**
+ * Erstellt einen Stack. Ohne gültige Session (anonym) wird `isPublic`
+ * serverseitig auf `true` erzwungen – privat stellen ist nur
+ * angemeldeten Nutzern erlaubt. Anonym angelegte Stacks haben kein
+ * `userId`-Feld.
+ */
 export async function createStack(
-  userId: string,
+  userId: string | undefined,
   input: StackInput,
 ): Promise<StackDto> {
+  const isPublic = userId ? input.isPublic : true
   const { insertedId } = await stacks().insertOne({
-    userId,
+    ...(userId ? { userId } : {}),
     name: input.name,
     creatorName: input.creatorName,
     examTime: input.examTime,
     passingScore: input.passingScore,
-    isPublic: input.isPublic,
+    isPublic,
     archived: false,
     questions: input.questions,
     leaderboard: [],
@@ -123,7 +140,7 @@ export async function createStack(
     creatorName: input.creatorName,
     examTime: input.examTime,
     passingScore: input.passingScore,
-    isPublic: input.isPublic,
+    isPublic,
     archived: false,
     questions: input.questions,
     leaderboard: [],
@@ -133,39 +150,70 @@ export async function createStack(
 /**
  * Speichert einen Stack neu. Fragen werden vollständig ersetzt
  * (§10.2: Löschungen aus dem Formular werden dauerhaft übernommen).
+ *
+ * Legacy-Stacks (vor der Zugriffskontrolle erstellt) sowie anonym
+ * angelegte Stacks haben kein `userId`-Feld. Solche ungeclaimten,
+ * öffentlichen Stacks übernimmt per atomarem Claim der erste
+ * Bearbeiter – so können Besitzer alte Stacks weiterhin bearbeiten
+ * und z. B. privat stellen, ohne sie zu verlieren.
  */
 export async function updateStack(
   id: string,
   userId: string,
   input: StackInput,
 ): Promise<StackDto | null> {
-  const { modifiedCount } = await stacks().updateOne(
-    { _id: new ObjectId(id), userId },
-    {
-      $set: {
-        name: input.name,
-        creatorName: input.creatorName,
-        examTime: input.examTime,
-        passingScore: input.passingScore,
-        isPublic: input.isPublic,
-        questions: input.questions,
-      },
-    },
-  )
+  const objectId = new ObjectId(id)
+  const set = {
+    name: input.name,
+    creatorName: input.creatorName,
+    examTime: input.examTime,
+    passingScore: input.passingScore,
+    isPublic: input.isPublic,
+    questions: input.questions,
+  }
 
-  return modifiedCount > 0 ? getStack(id, userId) : null
+  // 1) Normalfall: Nur der Besitzer darf bearbeiten.
+  const owned = await stacks().updateOne(
+    { _id: objectId, userId },
+    { $set: set },
+  )
+  if (owned.modifiedCount > 0) return getStack(id, userId)
+
+  // 2) Claim: ungeclaimter öffentlicher Stack wird vom ersten
+  //    Bearbeiter übernommen. Private Stacks Dritter sind nie
+  //    übernehmbar (kein `isPublic: { $ne: false }`).
+  const claimed = await stacks().updateOne(
+    { _id: objectId, userId: { $exists: false }, isPublic: { $ne: false } },
+    { $set: { ...set, userId } },
+  )
+  if (claimed.modifiedCount > 0) return getStack(id, userId)
+
+  return null
 }
 
+/**
+ * Archiviert einen Stack (nur der Besitzer). Ungeclaimte öffentliche
+ * Legacy-/Anonym-Stacks werden dabei ebenfalls übernommen (Claim),
+ * damit auch ältere Stacks archivierbar bleiben.
+ */
 export async function archiveStack(
   id: string,
   userId: string,
 ): Promise<boolean> {
-  const { modifiedCount } = await stacks().updateOne(
-    { _id: new ObjectId(id), userId },
+  const objectId = new ObjectId(id)
+
+  const owned = await stacks().updateOne(
+    { _id: objectId, userId },
     { $set: { archived: true } },
   )
+  if (owned.modifiedCount > 0) return true
 
-  return modifiedCount > 0
+  const claimed = await stacks().updateOne(
+    { _id: objectId, userId: { $exists: false }, isPublic: { $ne: false } },
+    { $set: { archived: true, userId } },
+  )
+
+  return claimed.modifiedCount > 0
 }
 
 /** Fügt einen Leaderboard-Eintrag hinzu, sofern er in die Top 3 reicht. */

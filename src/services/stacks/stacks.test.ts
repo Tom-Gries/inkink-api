@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { getDb } from '../../db.js'
 import app from '../../index.js'
 
 // In-Memory-Datenbank statt echter MongoDB – die Vertragstests laufen
@@ -63,6 +64,30 @@ const baseStack = {
       answerOptions: [],
     },
   ],
+}
+
+/**
+ * Legt direkt ein Legacy-Dokument an (ohne `userId`-Feld, wie Stacks
+ * vor der Zugriffskontrolle bzw. anonym angelegte Stacks).
+ */
+async function seedLegacyStack(
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { insertedId } = await getDb()
+    .collection('stacks')
+    .insertOne({
+      name: 'Legacy-Stack',
+      creatorName: 'Legacy Creator',
+      examTime: 0,
+      passingScore: 0,
+      isPublic: true,
+      archived: false,
+      questions: [],
+      leaderboard: [],
+      ...overrides,
+    })
+
+  return insertedId.toHexString()
 }
 
 describe('Stacks (Vertragstests)', () => {
@@ -215,17 +240,155 @@ describe('Stacks (Vertragstests)', () => {
     expect(body.leaderboard).toHaveLength(3)
   })
 
-  it('liefert 401 ohne gültige Session', async () => {
+  it('verlangt eine Session zum Bearbeiten (401 ohne Login)', async () => {
     const { getAuth } = await import('../../auth.js')
     vi.mocked(getAuth).mockReturnValueOnce({
       api: { getSession: async () => null },
     } as unknown as ReturnType<typeof getAuth>)
 
-    const res = await app.request('/api/stacks')
+    const res = await app.request(`/api/stacks/${createdId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(baseStack),
+    })
 
     expect(res.status).toBe(401)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
+  it('verlangt eine Session zum Archivieren (401 ohne Login)', async () => {
+    const { getAuth } = await import('../../auth.js')
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => null },
+    } as unknown as ReturnType<typeof getAuth>)
+
+    const res = await app.request(`/api/stacks/${createdId}/archive`, {
+      method: 'POST',
+    })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('erlaubt das Anlegen ohne Session, erzwingt aber öffentlich (201)', async () => {
+    const { getAuth } = await import('../../auth.js')
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => null },
+    } as unknown as ReturnType<typeof getAuth>)
+
+    const res = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        name: 'Anonymer Stack',
+        isPublic: false,
+      }),
+    })
+
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as StackBody
+    // Privat stellen ist ohne Login nicht erlaubt → Server erzwingt öffentlich.
+    expect(body.isPublic).toBe(true)
+    expect(body.id).toMatch(/^[0-9a-fA-F]{24}$/)
+  })
+
+  it('zeigt anonym nur öffentliche Stacks (Liste und Einzelansicht)', async () => {
+    // Zwei Stacks anlegen (angemeldet): einer öffentlich, einer privat.
+    const publicRes = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Öffentlich für alle' }),
+    })
+    expect(publicRes.status).toBe(201)
+    const publicStack = (await publicRes.json()) as StackBody
+
+    const privateRes = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        name: 'Streng geheim',
+        isPublic: false,
+      }),
+    })
+    expect(privateRes.status).toBe(201)
+    const privateStack = (await privateRes.json()) as StackBody
+
+    const { getAuth } = await import('../../auth.js')
+    const asAnonymous = () =>
+      vi.mocked(getAuth).mockReturnValueOnce({
+        api: { getSession: async () => null },
+      } as unknown as ReturnType<typeof getAuth>)
+
+    // Anonyme Liste: nur öffentliche Stacks.
+    asAnonymous()
+    const listRes = await app.request('/api/stacks')
+    expect(listRes.status).toBe(200)
+    const list = (await listRes.json()) as StackBody[]
+    expect(list.some((s) => s.id === publicStack.id)).toBe(true)
+    expect(list.some((s) => s.id === privateStack.id)).toBe(false)
+
+    // Anonyme Einzelansicht: öffentlich 200, privat 404.
+    asAnonymous()
+    const publicGet = await app.request(`/api/stacks/${publicStack.id}`)
+    expect(publicGet.status).toBe(200)
+
+    asAnonymous()
+    const privateGet = await app.request(`/api/stacks/${privateStack.id}`)
+    expect(privateGet.status).toBe(404)
+  })
+
+  it('übernimmt einen öffentlichen Legacy-Stack ohne userId beim Bearbeiten (Claim)', async () => {
+    const legacyId = await seedLegacyStack({ isPublic: true })
+
+    // user-1 öffnet den Legacy-Stack, stellt privat und speichert.
+    const putRes = await app.request(`/api/stacks/${legacyId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        name: 'Übernommen',
+        isPublic: false,
+      }),
+    })
+    expect(putRes.status).toBe(200)
+    expect(((await putRes.json()) as StackBody).isPublic).toBe(false)
+
+    // Ab jetzt ist der Stack dem Besitzer zugeordnet und sichtbar.
+    const ownerList = await app.request('/api/stacks')
+    const ownerListBody = (await ownerList.json()) as StackBody[]
+    expect(ownerListBody.some((s) => s.id === legacyId)).toBe(true)
+
+    // Für andere bleibt er unsichtbar.
+    const { getAuth } = await import('../../auth.js')
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const otherGet = await app.request(`/api/stacks/${legacyId}`)
+    expect(otherGet.status).toBe(404)
+  })
+
+  it('verweigert die Übernahme eines privaten Legacy-Stacks ohne userId (404)', async () => {
+    const legacyId = await seedLegacyStack({ isPublic: false })
+
+    const res = await app.request(`/api/stacks/${legacyId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Hijack', isPublic: true }),
+    })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('übernimmt einen öffentlichen Legacy-Stack beim Archivieren (Claim)', async () => {
+    const legacyId = await seedLegacyStack({ isPublic: true })
+
+    const res = await app.request(`/api/stacks/${legacyId}/archive`, {
+      method: 'POST',
+    })
+
+    expect(res.status).toBe(200)
   })
 
   it('zeigt private Stacks nur dem Besitzer', async () => {

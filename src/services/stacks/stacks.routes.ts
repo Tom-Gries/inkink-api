@@ -32,9 +32,20 @@ function requireUserId(
   return userId
 }
 
+/**
+ * userId aus der Session – oder undefined für anonyme Zugriffe.
+ * Lese-Endpoints und das Anlegen sind auch ohne Login erlaubt
+ * (öffentliche Stacks), Schreiboperationen verlangen eine Session.
+ */
+function optionalUserId(
+  session: { user?: { id?: string } | null } | null,
+): string | undefined {
+  return session?.user?.id
+}
+
 export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
   .get('/', sessionMiddleware, async (c) => {
-    const userId = requireUserId(c.get('session'))
+    const userId = optionalUserId(c.get('session'))
 
     return c.json(await listStacks(userId))
   })
@@ -43,7 +54,7 @@ export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
     sessionMiddleware,
     zValidator('param', stackIdParamSchema, validationErrorHook),
     async (c) => {
-      const userId = requireUserId(c.get('session'))
+      const userId = optionalUserId(c.get('session'))
       const { id } = c.req.valid('param')
       const stack = await getStack(id, userId)
 
@@ -62,7 +73,7 @@ export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
     sessionMiddleware,
     zValidator('json', stackInputSchema, validationErrorHook),
     async (c) => {
-      const userId = requireUserId(c.get('session'))
+      const userId = optionalUserId(c.get('session'))
       const input = c.req.valid('json')
       return c.json(await createStack(userId, input), 201)
     },

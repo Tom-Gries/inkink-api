@@ -19,11 +19,17 @@ function matches(document: FakeDocument, filter: Filter): boolean {
       return value.some((part) => matches(document, part as Filter))
     }
 
-    // Vergleichsoperatoren wie { isPublic: { $ne: false } }.
+    // Vergleichsoperatoren wie { isPublic: { $ne: false } } oder
+    // { userId: { $exists: false } }.
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       const operators = value as Record<string, unknown>
       if ('$ne' in operators) {
         return actual !== operators.$ne
+      }
+      if ('$exists' in operators) {
+        return operators.$exists === true
+          ? actual !== undefined
+          : actual === undefined
       }
     }
 

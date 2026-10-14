@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx src/dev.ts",
     "start": "tsx src/dev.ts",
+    "backfill:stacks": "tsx scripts/backfill-stack-owners.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format .",
