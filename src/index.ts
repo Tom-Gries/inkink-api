@@ -5,6 +5,7 @@ import { getTrustedOrigins } from './config.js'
 import { getDb } from './db.js'
 import { errorHandler } from './hooks/error-handler.js'
 import { realtimeRoutes } from './realtime/sse.routes.js'
+import { connectinkRoutes } from './services/connectink/connectink.routes.js'
 import { feelingsRoutes } from './services/feelings/feelings.routes.js'
 import { meRoutes } from './services/me/me.routes.js'
 import { profileRoutes } from './services/profile/profile.routes.js'
@@ -69,6 +70,7 @@ const routes = api
   .route('/profile', profileRoutes)
   .route('/stacks', stacksRoutes)
   .route('/feelings', feelingsRoutes)
+  .route('/connectink', connectinkRoutes)
   .route('/test', testRoutes)
   .route('/users', usersRoutes)
   .route('/realtime', realtimeRoutes)
