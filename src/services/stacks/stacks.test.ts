@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { ObjectId } from 'mongodb'
 import { describe, expect, it, vi } from 'vitest'
 import { getDb } from '../../db.js'
 import app from '../../index.js'
@@ -33,6 +34,7 @@ interface StackBody {
   archived: boolean
   questions: unknown[]
   leaderboard: Array<{ name: string; score: number; time: number }>
+  groups: Array<{ id: string; name: string }>
 }
 
 let createdId: string
@@ -463,5 +465,169 @@ describe('Stacks (Vertragstests)', () => {
       method: 'POST',
     })
     expect(otherArchive.status).toBe(404)
+  })
+  it('zeigt private Stacks einer Gruppe nur deren Mitgliedern', async () => {
+    const { getAuth } = await import('../../auth.js')
+    const db = getDb()
+    const groupId = new ObjectId().toHexString()
+    await db.collection('groups').insertOne({
+      _id: new ObjectId(groupId),
+      name: 'Lerngruppe',
+      ownerId: 'user-1',
+      management: 'owner',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await db.collection('group_members').insertOne({
+      groupId,
+      userId: 'user-1',
+      role: 'owner',
+      status: 'accepted',
+      addedBy: 'user-1',
+      addedAt: new Date(),
+      updatedAt: new Date(),
+    })
+
+    // Privater Stack von user-1, der Gruppe zugeordnet.
+    const created = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        isPublic: false,
+        groupIds: [groupId],
+      }),
+    })
+    expect(created.status).toBe(201)
+    const stack = (await created.json()) as StackBody
+    expect(stack.groups).toEqual([{ id: groupId, name: 'Lerngruppe' }])
+
+    // Gruppen-Stacks-Endpunkt: Mitglied sieht den Stack (auch privat).
+    const groupStacks = await app.request(
+      `/api/connectink/groups/${groupId}/stacks`,
+    )
+    expect(groupStacks.status).toBe(200)
+    const body = (await groupStacks.json()) as { stacks: StackBody[] }
+    expect(body.stacks.some((s) => s.id === stack.id)).toBe(true)
+
+    // Fremder (user-2) sieht den privaten Stack NICHT in der Übersicht.
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const list = await app.request('/api/stacks')
+    const listBody = (await list.json()) as StackBody[]
+    expect(listBody.some((s) => s.id === stack.id)).toBe(false)
+
+    // Fremder bekommt 403 beim Gruppen-Stacks-Endpunkt.
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const forbidden = await app.request(
+      `/api/connectink/groups/${groupId}/stacks`,
+    )
+    expect(forbidden.status).toBe(403)
+  })
+
+  it('filtert mit mine=true auf eigene Stacks', async () => {
+    const { getAuth } = await import('../../auth.js')
+    const mine = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Mein Stack' }),
+    })
+    expect(mine.status).toBe(201)
+    const mineBody = (await mine.json()) as StackBody
+
+    // Fremder öffentlicher Stack (user-2).
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const other = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, name: 'Fremder Stack' }),
+    })
+    expect(other.status).toBe(201)
+
+    // Als user-1: mine=true → nur der eigene Stack.
+    const list = await app.request('/api/stacks?mine=true')
+    const listBody = (await list.json()) as StackBody[]
+    expect(listBody.some((s) => s.id === mineBody.id)).toBe(true)
+    expect(listBody.some((s) => s.name === 'Fremder Stack')).toBe(false)
+  })
+
+  it('setzt Gruppen-Zuordnungen nur für Mitglieder', async () => {
+    const { getAuth } = await import('../../auth.js')
+    const db = getDb()
+    const groupId = new ObjectId().toHexString()
+    await db.collection('groups').insertOne({
+      _id: new ObjectId(groupId),
+      name: 'Lerngruppe',
+      ownerId: 'user-1',
+      management: 'owner',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await db.collection('group_members').insertOne({
+      groupId,
+      userId: 'user-1',
+      role: 'owner',
+      status: 'accepted',
+      addedBy: 'user-1',
+      addedAt: new Date(),
+      updatedAt: new Date(),
+    })
+
+    const created = await app.request('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(baseStack),
+    })
+    const stack = (await created.json()) as StackBody
+
+    // Owner + Mitglied → setzt groupIds.
+    const put = await app.request(`/api/stacks/${stack.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, groupIds: [groupId] }),
+    })
+    expect(put.status).toBe(200)
+    const putBody = (await put.json()) as StackBody
+    expect(putBody.groups).toEqual([{ id: groupId, name: 'Lerngruppe' }])
+
+    // Unbekannte Gruppe → 404.
+    const bad = await app.request(`/api/stacks/${stack.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...baseStack,
+        groupIds: ['999999999999999999999999'],
+      }),
+    })
+    expect(bad.status).toBe(404)
+
+    // Nicht-Mitglied (user-2) → 403.
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-2' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const other = await app.request(`/api/stacks/${stack.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, groupIds: [groupId] }),
+    })
+    expect(other.status).toBe(403)
+
+    // groupIds: [] entfernt die Zuordnungen.
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: { getSession: async () => ({ user: { id: 'user-1' } }) },
+    } as unknown as ReturnType<typeof getAuth>)
+    const clear = await app.request(`/api/stacks/${stack.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...baseStack, groupIds: [] }),
+    })
+    expect(clear.status).toBe(200)
+    const clearBody = (await clear.json()) as StackBody
+    expect(clearBody.groups).toEqual([])
   })
 })

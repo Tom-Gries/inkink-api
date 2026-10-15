@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { z } from 'zod'
 import { type AuthVariables, sessionMiddleware } from '../../hooks/auth.js'
 import { validationErrorHook } from '../../hooks/validation.js'
 import {
@@ -16,6 +17,11 @@ import {
   listStacks,
   updateStack,
 } from './stacks.service.js'
+
+/** Query für die Stacks-Liste: `mine=true` filtert auf eigene Stacks. */
+const listStacksQuerySchema = z.object({
+  mine: z.enum(['true', 'false']).optional(),
+})
 
 /**
  * Session-basierter Schutz: Ohne gültige Session (Cookie) → 401.
@@ -44,11 +50,17 @@ function optionalUserId(
 }
 
 export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
-  .get('/', sessionMiddleware, async (c) => {
-    const userId = optionalUserId(c.get('session'))
+  .get(
+    '/',
+    sessionMiddleware,
+    zValidator('query', listStacksQuerySchema, validationErrorHook),
+    async (c) => {
+      const userId = optionalUserId(c.get('session'))
+      const { mine } = c.req.valid('query')
 
-    return c.json(await listStacks(userId))
-  })
+      return c.json(await listStacks(userId, mine === 'true'))
+    },
+  )
   .get(
     '/:id',
     sessionMiddleware,

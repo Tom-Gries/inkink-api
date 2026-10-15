@@ -81,6 +81,10 @@ export const stackInputSchema = z.object({
   // Öffentlich oder privat – neue Stacks sind standardmäßig öffentlich.
   isPublic: z.boolean().default(true),
   questions: z.array(questionSchema).default([]),
+  // Gruppen, denen der Stack zugeordnet ist (viele-zu-viele).
+  groupIds: z
+    .array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Ungültige Gruppen-ID.'))
+    .default([]),
 })
 
 export const stackIdParamSchema = z.object({
@@ -114,4 +118,6 @@ export interface StackDto {
   archived: boolean
   questions: Question[]
   leaderboard: LeaderboardEntry[]
+  /** Gruppen, denen der Stack zugeordnet ist (mit Namen). */
+  groups: Array<{ id: string; name: string }>
 }

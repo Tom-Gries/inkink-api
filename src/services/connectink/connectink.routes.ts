@@ -13,6 +13,7 @@ import {
   searchUsersQuerySchema,
   updateGroupSchema,
 } from '../../schemas/connectink.js'
+import { listGroupStacks } from '../stacks/stacks.service.js'
 import {
   addGroupMember,
   ConnectError,
@@ -295,5 +296,17 @@ connectinkRoutes.post(
       const userId = requireUserId(c.get('session'))
       const { id: groupId } = c.req.valid('param')
       return c.json(await resolveGroupInvitation(userId, groupId, 'ignore'))
+    }),
+)
+
+connectinkRoutes.get(
+  '/groups/:id/stacks',
+  sessionMiddleware,
+  zValidator('param', groupIdParamSchema, validationErrorHook),
+  (c) =>
+    runAction(c, async () => {
+      const userId = requireUserId(c.get('session'))
+      const { id: groupId } = c.req.valid('param')
+      return c.json({ stacks: await listGroupStacks(userId, groupId) })
     }),
 )

@@ -138,8 +138,15 @@ export function createInMemoryDb() {
         ) {
           const index = documents.findIndex((d) => matches(d, filter))
           if (index === -1) return { matchedCount: 0, modifiedCount: 0 }
+          // MongoDB-treu: Sind die $set-Werte identisch, ist modifiedCount 0
+          // (matchedCount bleibt 1) – Services müssen matchedCount prüfen.
+          const before = JSON.stringify(documents[index])
           applySet(documents[index], update.$set)
-          return { matchedCount: 1, modifiedCount: 1 }
+          const after = JSON.stringify(documents[index])
+          return {
+            matchedCount: 1,
+            modifiedCount: before === after ? 0 : 1,
+          }
         },
         async deleteOne(filter: Filter) {
           const index = documents.findIndex((d) => matches(d, filter))
