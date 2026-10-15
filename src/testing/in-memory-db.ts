@@ -147,6 +147,16 @@ export function createInMemoryDb() {
           documents.splice(index, 1)
           return { deletedCount: 1 }
         },
+        async deleteMany(filter: Filter) {
+          let deletedCount = 0
+          for (let i = documents.length - 1; i >= 0; i--) {
+            if (matches(documents[i], filter)) {
+              documents.splice(i, 1)
+              deletedCount++
+            }
+          }
+          return { deletedCount }
+        },
         // Index-Erstellung ist im In-Memory-Ersatz ein No-op: Sie liefert nur
         // den Namen des (nicht real angelegten) Index zurück, damit Services
         // mit idempotentem ensureIndexes() auch ohne echte DB testbar bleiben.

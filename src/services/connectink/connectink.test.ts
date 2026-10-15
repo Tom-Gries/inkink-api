@@ -83,6 +83,104 @@ async function incomingRequestId(from: string): Promise<string> {
   return request.id
 }
 
+interface GroupBody {
+  id: string
+  name: string
+  ownerId: string
+  management: string
+  myRole: string
+  createdAt: string
+  members: Array<{
+    userId: string
+    name: string
+    image: string | null
+    role: string
+    addedAt: string
+  }>
+  invitations: Array<{
+    userId: string
+    name: string
+    image: string | null
+    role: string
+    addedAt: string
+  }>
+}
+
+interface GroupInvitationsBody {
+  invitations: Array<{
+    id: string
+    group: { id: string; name: string }
+    invitedBy: { id: string; name: string; image: string | null }
+    status: string
+    createdAt: string
+  }>
+}
+
+async function createGroupRequest(name: string): Promise<Response> {
+  return app.request('/api/connectink/groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+async function addMemberRequest(
+  groupId: string,
+  userId: string,
+): Promise<Response> {
+  return app.request(`/api/connectink/groups/${groupId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  })
+}
+
+async function patchGroupRequest(
+  groupId: string,
+  body: { name?: string; management?: string },
+): Promise<Response> {
+  return app.request(`/api/connectink/groups/${groupId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+/** Legt eine acceptierte Verbindung zwischen zwei Nutzern an. */
+async function seedConnection(from: string, to: string): Promise<void> {
+  const db = (await import('../../db.js')).getDb()
+  await db.collection('connections').insertOne({
+    fromUserId: from,
+    toUserId: to,
+    status: 'accepted',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+}
+
+/**
+ * Lässt den AKTUELLEN Session-Nutzer einen Ziel-Nutzer einladen und den
+ * Ziel-Nutzer die Einladung annehmen. Danach ist wieder der Einladende aktiv.
+ */
+async function inviteAndAccept(
+  groupId: string,
+  targetUserId: string,
+): Promise<void> {
+  const inviter = authState.userId
+
+  const invite = await addMemberRequest(groupId, targetUserId)
+  expect(invite.status).toBe(200)
+
+  authState.userId = targetUserId
+  const accept = await app.request(
+    `/api/connectink/groups/invitations/${groupId}/accept`,
+    { method: 'POST' },
+  )
+  expect(accept.status).toBe(200)
+
+  authState.userId = inviter
+}
+
 describe('Conectink (Vertragstests)', () => {
   beforeEach(async () => {
     // Sauberer Zustand pro Test: alle Collections leeren und als „Ich“
@@ -384,5 +482,358 @@ describe('Conectink (Vertragstests)', () => {
     expect(res.status).toBe(401)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+  it('erstellt eine Gruppe (201) mit Owner als Mitglied', async () => {
+    const res = await createGroupRequest('Lerngruppe')
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as GroupBody
+    expect(body.name).toBe('Lerngruppe')
+    expect(body.ownerId).toBe(ME)
+    expect(body.management).toBe('owner')
+    expect(body.myRole).toBe('owner')
+    expect(body.members).toHaveLength(1)
+    expect(body.members[0].userId).toBe(ME)
+    expect(body.members[0].role).toBe('owner')
+  })
+
+  it('liefert 400 bei leerem Gruppennamen', async () => {
+    const res = await createGroupRequest('   ')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  it('listet meine Gruppen', async () => {
+    const created = await createGroupRequest('Lerngruppe')
+    expect(created.status).toBe(201)
+
+    const res = await app.request('/api/connectink/groups')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { groups: GroupBody[] }
+    expect(body.groups).toHaveLength(1)
+    expect(body.groups[0].name).toBe('Lerngruppe')
+  })
+
+  it('lädt ein; erst nach Akzeptieren ist die Person Mitglied und sieht die Gruppe', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Owner lädt Alice ein → offene Einladung, aber noch kein Mitglied.
+    const add = await addMemberRequest(group.id, ALICE)
+    expect(add.status).toBe(200)
+    const addBody = (await add.json()) as GroupBody
+    expect(addBody.invitations.some((i) => i.userId === ALICE)).toBe(true)
+    expect(addBody.members.some((m) => m.userId === ALICE)).toBe(false)
+
+    // Alice sieht die Einladung, aber noch nicht die Gruppe als Mitglied.
+    authState.userId = ALICE
+    const inv = await app.request('/api/connectink/groups/invitations')
+    const invBody = (await inv.json()) as GroupInvitationsBody
+    expect(invBody.invitations.some((i) => i.group.id === group.id)).toBe(true)
+
+    const listBefore = await app.request('/api/connectink/groups')
+    const listBeforeBody = (await listBefore.json()) as { groups: GroupBody[] }
+    expect(listBeforeBody.groups.some((g) => g.id === group.id)).toBe(false)
+
+    // Alice akzeptiert → Mitglied und sieht die Gruppe.
+    const accept = await app.request(
+      `/api/connectink/groups/invitations/${group.id}/accept`,
+      { method: 'POST' },
+    )
+    expect(accept.status).toBe(200)
+
+    const list = await app.request('/api/connectink/groups')
+    const listBody = (await list.json()) as { groups: GroupBody[] }
+    expect(listBody.groups.some((g) => g.id === group.id)).toBe(true)
+    expect(listBody.groups[0].myRole).toBe('member')
+  })
+
+  it('blockiert das Hinzufügen nicht-verbundener Nutzer (NOT_CONNECTED)', async () => {
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice ist NICHT mit mir verbunden.
+    const add = await addMemberRequest(group.id, ALICE)
+    expect(add.status).toBe(400)
+    const body = (await add.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('NOT_CONNECTED')
+  })
+
+  it('verweigert regulären Mitgliedern das Hinzufügen in der owner-Richtlinie', async () => {
+    await seedConnection(ME, ALICE)
+    await seedConnection(ME, BOB)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice als aktives Mitglied (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+
+    // Alice (reguläres Mitglied) versucht, Bob einzuladen → 403.
+    authState.userId = ALICE
+    const addBob = await addMemberRequest(group.id, BOB)
+    expect(addBob.status).toBe(403)
+  })
+
+  it('liefert 409 bei offener Einladung und bei bereits enthaltenem Mitglied', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    const first = await addMemberRequest(group.id, ALICE)
+    expect(first.status).toBe(200)
+
+    // Einladung bereits offen → 409 ALREADY_INVITED.
+    const again = await addMemberRequest(group.id, ALICE)
+    expect(again.status).toBe(409)
+    const againBody = (await again.json()) as { error: { code: string } }
+    expect(againBody.error.code).toBe('ALREADY_INVITED')
+
+    // Alice akzeptiert → aktives Mitglied → erneutes Einladen → 409 ALREADY_MEMBER.
+    authState.userId = ALICE
+    const accept = await app.request(
+      `/api/connectink/groups/invitations/${group.id}/accept`,
+      { method: 'POST' },
+    )
+    expect(accept.status).toBe(200)
+
+    authState.userId = ME
+    const asMember = await addMemberRequest(group.id, ALICE)
+    expect(asMember.status).toBe(409)
+    const asMemberBody = (await asMember.json()) as { error: { code: string } }
+    expect(asMemberBody.error.code).toBe('ALREADY_MEMBER')
+  })
+
+  it('erlaubt in der members_add-Richtlinie das Hinzufügen durch Mitglieder', async () => {
+    await seedConnection(ME, ALICE)
+    await seedConnection(ALICE, BOB)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice als aktives Mitglied (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+
+    const patch = await patchGroupRequest(group.id, {
+      management: 'members_add',
+    })
+    expect(patch.status).toBe(200)
+
+    // Alice (Mitglied) darf Bob einladen → 200 (offene Einladung).
+    authState.userId = ALICE
+    const addBob = await addMemberRequest(group.id, BOB)
+    expect(addBob.status).toBe(200)
+    const addBobBody = (await addBob.json()) as GroupBody
+    expect(addBobBody.invitations.some((i) => i.userId === BOB)).toBe(true)
+  })
+
+  it('erlaubt in der members_full-Richtlinie Hinzufügen und Entfernen durch Mitglieder', async () => {
+    await seedConnection(ME, ALICE)
+    await seedConnection(ME, BOB)
+    await seedConnection(ALICE, BOB)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice + Bob als aktive Mitglieder (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+    await inviteAndAccept(group.id, BOB)
+
+    const patch = await patchGroupRequest(group.id, {
+      management: 'members_full',
+    })
+    expect(patch.status).toBe(200)
+
+    // Alice (Mitglied) entfernt Bob → 200.
+    authState.userId = ALICE
+    const remove = await app.request(
+      `/api/connectink/groups/${group.id}/members/${BOB}`,
+      { method: 'DELETE' },
+    )
+    expect(remove.status).toBe(200)
+    const removeBody = (await remove.json()) as GroupBody
+    expect(removeBody.members.some((m) => m.userId === BOB)).toBe(false)
+  })
+
+  it('entfernt Mitglieder (Owner) und blockiert das Entfernen des Owners', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice als aktives Mitglied (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+
+    const remove = await app.request(
+      `/api/connectink/groups/${group.id}/members/${ALICE}`,
+      { method: 'DELETE' },
+    )
+    expect(remove.status).toBe(200)
+    const removeBody = (await remove.json()) as GroupBody
+    expect(removeBody.members.some((m) => m.userId === ALICE)).toBe(false)
+
+    // Der Owner selbst kann nicht entfernt werden → 400.
+    const removeOwner = await app.request(
+      `/api/connectink/groups/${group.id}/members/${ME}`,
+      { method: 'DELETE' },
+    )
+    expect(removeOwner.status).toBe(400)
+  })
+
+  it('erlaubt Umbenennen für Owner, nicht für Mitglieder; Richtlinie nur Owner', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice als aktives Mitglied (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+
+    // Owner benennt um + ändert Richtlinie → 200.
+    const patch = await patchGroupRequest(group.id, {
+      name: 'Neuer Name',
+      management: 'members_add',
+    })
+    expect(patch.status).toBe(200)
+    const patchBody = (await patch.json()) as GroupBody
+    expect(patchBody.name).toBe('Neuer Name')
+    expect(patchBody.management).toBe('members_add')
+
+    // Alice (Mitglied) darf nicht umbenennen → 403.
+    authState.userId = ALICE
+    const patchMember = await patchGroupRequest(group.id, { name: 'Hack' })
+    expect(patchMember.status).toBe(403)
+  })
+
+  it('ernennt Admins; Admins verwalten auch in der owner-Richtlinie', async () => {
+    await seedConnection(ME, ALICE)
+    await seedConnection(ME, BOB)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice + Bob als aktive Mitglieder (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+    await inviteAndAccept(group.id, BOB)
+
+    // Owner macht Alice zum Admin.
+    const promote = await app.request(
+      `/api/connectink/groups/${group.id}/admins`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: ALICE }),
+      },
+    )
+    expect(promote.status).toBe(200)
+    const promoteBody = (await promote.json()) as GroupBody
+    expect(promoteBody.members.find((m) => m.userId === ALICE)?.role).toBe(
+      'admin',
+    )
+
+    // Alice (Admin) darf in der owner-Richtlinie Bob entfernen → 200.
+    authState.userId = ALICE
+    const remove = await app.request(
+      `/api/connectink/groups/${group.id}/members/${BOB}`,
+      { method: 'DELETE' },
+    )
+    expect(remove.status).toBe(200)
+
+    // Alice darf KEINE Admins ernennen → 403.
+    const promoteByAdmin = await app.request(
+      `/api/connectink/groups/${group.id}/admins`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: BOB }),
+      },
+    )
+    expect(promoteByAdmin.status).toBe(403)
+
+    // Owner entzieht den Admin-Status.
+    authState.userId = ME
+    const demote = await app.request(
+      `/api/connectink/groups/${group.id}/admins/${ALICE}`,
+      { method: 'DELETE' },
+    )
+    expect(demote.status).toBe(200)
+    const demoteBody = (await demote.json()) as GroupBody
+    expect(demoteBody.members.find((m) => m.userId === ALICE)?.role).toBe(
+      'member',
+    )
+  })
+
+  it('löscht die Gruppe (Owner) und verweigert Nicht-Ownern', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    // Alice als aktives Mitglied (einladen + akzeptieren).
+    await inviteAndAccept(group.id, ALICE)
+
+    // Alice darf nicht löschen → 403.
+    authState.userId = ALICE
+    const forbidden = await app.request(`/api/connectink/groups/${group.id}`, {
+      method: 'DELETE',
+    })
+    expect(forbidden.status).toBe(403)
+
+    // Owner löscht → 204; danach ist die Gruppe für alle weg.
+    authState.userId = ME
+    const del = await app.request(`/api/connectink/groups/${group.id}`, {
+      method: 'DELETE',
+    })
+    expect(del.status).toBe(204)
+
+    const list = await app.request('/api/connectink/groups')
+    const listBody = (await list.json()) as { groups: GroupBody[] }
+    expect(listBody.groups).toHaveLength(0)
+
+    authState.userId = ALICE
+    const listAlice = await app.request('/api/connectink/groups')
+    const listAliceBody = (await listAlice.json()) as { groups: GroupBody[] }
+    expect(listAliceBody.groups).toHaveLength(0)
+  })
+  it('erlaubt nach Ablehnung einer Einladung erneutes Einladen', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    const invite = await addMemberRequest(group.id, ALICE)
+    expect(invite.status).toBe(200)
+
+    // Alice lehnt ab.
+    authState.userId = ALICE
+    const reject = await app.request(
+      `/api/connectink/groups/invitations/${group.id}/reject`,
+      { method: 'POST' },
+    )
+    expect(reject.status).toBe(200)
+
+    // Owner darf erneut einladen (reaktiviert auf pending).
+    authState.userId = ME
+    const again = await addMemberRequest(group.id, ALICE)
+    expect(again.status).toBe(200)
+    const againBody = (await again.json()) as GroupBody
+    expect(againBody.invitations.some((i) => i.userId === ALICE)).toBe(true)
+  })
+
+  it('blockiert erneutes Einladen nach Ignorieren (IGNORED)', async () => {
+    await seedConnection(ME, ALICE)
+    const created = await createGroupRequest('Lerngruppe')
+    const group = (await created.json()) as GroupBody
+
+    const invite = await addMemberRequest(group.id, ALICE)
+    expect(invite.status).toBe(200)
+
+    // Alice ignoriert.
+    authState.userId = ALICE
+    const ignore = await app.request(
+      `/api/connectink/groups/invitations/${group.id}/ignore`,
+      { method: 'POST' },
+    )
+    expect(ignore.status).toBe(200)
+
+    // Owner darf NICHT erneut einladen → 409 IGNORED.
+    authState.userId = ME
+    const again = await addMemberRequest(group.id, ALICE)
+    expect(again.status).toBe(409)
+    const body = (await again.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('IGNORED')
   })
 })
