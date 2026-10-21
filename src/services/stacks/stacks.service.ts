@@ -475,8 +475,15 @@ export async function archiveStack(
 export async function addLeaderboardEntry(
   id: string,
   entry: LeaderboardEntry,
+  userId?: string,
 ): Promise<StackDto | null> {
-  const document = await getStackRaw(id)
+  const groupStackIds = userId
+    ? await stackIdsInGroups(await myGroupIds(userId))
+    : []
+  const document = await stacks().findOne({
+    _id: new ObjectId(id),
+    ...visibleStacksFilter(userId, groupStackIds),
+  })
   if (!document) return null
 
   const ranked = rankLeaderboard([...document.leaderboard, entry])

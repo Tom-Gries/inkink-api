@@ -132,12 +132,17 @@ export const stacksRoutes = new Hono<{ Variables: AuthVariables }>()
   )
   .post(
     '/:id/leaderboard',
+    sessionMiddleware,
     zValidator('param', stackIdParamSchema, validationErrorHook),
     zValidator('json', leaderboardEntrySchema, validationErrorHook),
     async (c) => {
       const { id } = c.req.valid('param')
       const entry = c.req.valid('json')
-      const stack = await addLeaderboardEntry(id, entry)
+      const stack = await addLeaderboardEntry(
+        id,
+        entry,
+        optionalUserId(c.get('session')),
+      )
 
       if (!stack) {
         return c.json(

@@ -631,3 +631,97 @@ describe('Stacks (Vertragstests)', () => {
     expect(clearBody.groups).toEqual([])
   })
 })
+
+describe('Zugriffsschutz des Leaderboards', () => {
+  it.each([
+    null,
+    'outsider',
+    'pending-member',
+    'former-member',
+  ])('verweigert privaten Stack für %s ohne Daten oder Änderungen', async (viewer) => {
+    const { getAuth } = await import('../../auth.js')
+    const groupId = new ObjectId().toHexString()
+    const id = await seedLegacyStack({
+      userId: 'owner',
+      isPublic: false,
+      name: 'Geheimer Stack',
+      questions: baseStack.questions,
+    })
+    await getDb().collection('stack_groups').insertOne({ stackId: id, groupId })
+    for (const [userId, status] of [
+      ['pending-member', 'pending'],
+      ['former-member', 'rejected'],
+    ]) {
+      await getDb()
+        .collection('group_members')
+        .insertOne({ groupId, userId, status })
+    }
+    for (const path of [
+      '/api/stacks',
+      `/api/stacks/${id}`,
+      `/api/stacks/${id}/leaderboard`,
+    ]) {
+      vi.mocked(getAuth).mockReturnValueOnce({
+        api: {
+          getSession: async () => (viewer ? { user: { id: viewer } } : null),
+        },
+      } as unknown as ReturnType<typeof getAuth>)
+      const res = await app.request(
+        path,
+        path.endsWith('/leaderboard')
+          ? {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: 'Angreifer', score: 100, time: 1 }),
+            }
+          : undefined,
+      )
+      if (path === '/api/stacks') {
+        expect(res.status).toBe(200)
+        expect(
+          ((await res.json()) as StackBody[]).some((stack) => stack.id === id),
+        ).toBe(false)
+      } else {
+        expect(res.status).toBe(404)
+        expect(await res.json()).toEqual({
+          error: { code: 'NOT_FOUND', message: 'Stack nicht gefunden.' },
+        })
+      }
+    }
+    const stored = await getDb()
+      .collection('stacks')
+      .findOne({ _id: new ObjectId(id) })
+    expect(stored?.leaderboard).toEqual([])
+  })
+
+  it.each([
+    'owner',
+    'member',
+    null,
+  ])('erlaubt berechtigten Zugriff für %s', async (viewer) => {
+    const { getAuth } = await import('../../auth.js')
+    const groupId = new ObjectId().toHexString()
+    const id = await seedLegacyStack({
+      userId: 'owner',
+      isPublic: viewer === null,
+    })
+    await getDb().collection('stack_groups').insertOne({ stackId: id, groupId })
+    await getDb()
+      .collection('group_members')
+      .insertOne({ groupId, userId: 'member', status: 'accepted' })
+    vi.mocked(getAuth).mockReturnValueOnce({
+      api: {
+        getSession: async () => (viewer ? { user: { id: viewer } } : null),
+      },
+    } as unknown as ReturnType<typeof getAuth>)
+    const res = await app.request(`/api/stacks/${id}/leaderboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Spieler', score: 10, time: 5 }),
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as StackBody).leaderboard).toEqual([
+      { name: 'Spieler', score: 10, time: 5 },
+    ])
+  })
+})

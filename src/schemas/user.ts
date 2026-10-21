@@ -9,11 +9,10 @@ export const userIdParamSchema = z.object({
 })
 
 /**
- * Benutzer-DTO. Die „user"-Collection gehört Better Auth (Phase 3) –
+ * Öffentliches Benutzer-DTO ohne E-Mail-Adresse. Die „user"-Collection gehört Better Auth (Phase 3) –
  * dieses Modul liest sie nur.
  */
 export interface UserDto {
   id: string
   name: string | null
-  email: string | null
 }

@@ -20,7 +20,6 @@ function toDto(document: WithId<UserDocument>): UserDto {
   return {
     id: document._id.toHexString(),
     name: document.name ?? null,
-    email: document.email ?? null,
   }
 }
 
